@@ -34,6 +34,7 @@ import {
   $getNearestNodeFromDOMNode,
   $flushMutations,
   $createLineBreakNode,
+  $isLineBreakNode,
 } from 'lexical';
 import {IS_FIREFOX, IS_APPLE} from 'shared/environment';
 import getPossibleDecoratorNode from 'shared/getPossibleDecoratorNode';
@@ -42,6 +43,7 @@ import {$createListItemNode} from 'lexical/ListItemNode';
 import {$createParagraphNode} from 'lexical/ParagraphNode';
 import {$createHeadingNode} from 'lexical/HeadingNode';
 import {$createLinkNode} from 'lexical/LinkNode';
+import {$createCodeNode} from 'lexical/CodeNode';
 import type {TextFormatType} from 'lexical';
 // TODO we shouldn't really be importing from core here.
 import {TEXT_TYPE_TO_FORMAT} from '../core/LexicalConstants';
@@ -64,6 +66,10 @@ export type DOMConversionMap = {
 type DOMConversionOutput = {
   node: LexicalNode | null,
   format?: TextFormatType,
+  after?: (
+    ?LexicalNode,
+    Array<LexicalNode>,
+  ) => [?LexicalNode, Array<LexicalNode>],
 };
 
 const DOM_NODE_NAME_TO_LEXICAL_NODE: DOMConversionMap = {
@@ -77,6 +83,30 @@ const DOM_NODE_NAME_TO_LEXICAL_NODE: DOMConversionMap = {
   h5: () => ({node: $createHeadingNode('h5')}),
   p: () => ({node: $createParagraphNode()}),
   br: () => ({node: $createLineBreakNode()}),
+  pre: () => ({node: $createCodeNode()}),
+  div: (domNode: Node) => {
+    // Need a better way to check if it's root level node or not.
+    // In case we have metadata info that indicates code paste
+    // there's no need to rely on font family, but then need to
+    // know which node is root level.
+    const isCode =
+      domNode instanceof HTMLElement
+        ? domNode.style.fontFamily.match('monospace') !== null
+        : false;
+
+    return {
+      node: isCode ? $createCodeNode() : null,
+      after: (node, children) => {
+        if (isCode && $isLineBreakNode(children[children.length - 1])) {
+          // Optional trailing newlines trimming
+          children.pop();
+        } else if ($isTextNode(children[children.length - 1])) {
+          children.push($createLineBreakNode());
+        }
+        return [node, children];
+      },
+    };
+  },
   a: (domNode: Node) => {
     let node;
     if (domNode instanceof HTMLAnchorElement) {
@@ -164,22 +194,32 @@ export function $createNodesFromDOM(
   // If the DOM node doesn't have a transformer, we don't know what
   // to do with it but we still need to process any childNodes.
   const children = node.childNodes;
+  let childLexicalNodes = [];
   for (let i = 0; i < children.length; i++) {
-    const childLexicalNodes = $createNodesFromDOM(
-      children[i],
-      conversionMap,
-      editor,
-      currentTextFormat,
+    childLexicalNodes = childLexicalNodes.concat(
+      $createNodesFromDOM(
+        children[i],
+        conversionMap,
+        editor,
+        currentTextFormat,
+      ),
     );
-    if ($isElementNode(currentLexicalNode)) {
-      // If the current node is a ElementNode after transformation,
-      // we can append all the children to it.
-      currentLexicalNode.append(...childLexicalNodes);
-    } else if (currentLexicalNode === null) {
-      // If it doesn't have a transformer, we hoist its children
-      // up to the same level as it.
-      lexicalNodes = lexicalNodes.concat(childLexicalNodes);
-    }
+  }
+
+  if (transformOutput !== null && transformOutput.after) {
+    [currentLexicalNode, childLexicalNodes] = transformOutput.after(
+      currentLexicalNode,
+      childLexicalNodes,
+    );
+  }
+  if ($isElementNode(currentLexicalNode)) {
+    // If the current node is a ElementNode after transformation,
+    // we can append all the children to it.
+    currentLexicalNode.append(...childLexicalNodes);
+  } else if (currentLexicalNode === null) {
+    // If it doesn't have a transformer, we hoist its children
+    // up to the same level as it.
+    lexicalNodes = lexicalNodes.concat(childLexicalNodes);
   }
   return lexicalNodes;
 }
