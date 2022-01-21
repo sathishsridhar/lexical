@@ -43,7 +43,7 @@ import {$createListItemNode} from 'lexical/ListItemNode';
 import {$createParagraphNode} from 'lexical/ParagraphNode';
 import {$createHeadingNode} from 'lexical/HeadingNode';
 import {$createLinkNode} from 'lexical/LinkNode';
-
+import {$createCodeNode} from 'lexical/CodeNode';
 // TODO we shouldn't really be importing from core here.
 import {TEXT_TYPE_TO_FORMAT} from '../../lexical/src/LexicalConstants';
 
@@ -58,6 +58,25 @@ export type EventHandler = (
   editor: LexicalEditor,
 ) => void;
 
+const inlineNodeNames = new Set([
+  '#text',
+  'span',
+  'a',
+  'strong',
+  'em',
+  'b',
+  'i',
+  'u',
+]);
+
+const isInlineNode = (domNode: Node): boolean => {
+  return inlineNodeNames.has(domNode.nodeName.toLowerCase());
+};
+
+const isCodeElement = (div: HTMLDivElement): boolean => {
+  return div.style.fontFamily.match('monospace') !== null;
+};
+
 const DOM_NODE_NAME_TO_LEXICAL_NODE: DOMConversionMap = {
   ul: () => ({node: $createListNode('ul')}),
   ol: () => ({node: $createListNode('ol')}),
@@ -69,6 +88,28 @@ const DOM_NODE_NAME_TO_LEXICAL_NODE: DOMConversionMap = {
   h5: () => ({node: $createHeadingNode('h5')}),
   p: () => ({node: $createParagraphNode()}),
   br: () => ({node: $createLineBreakNode()}),
+  pre: () => ({node: $createCodeNode()}),
+  div: (domNode: Node) => {
+    const {childNodes} = domNode;
+    const lastChild = childNodes[childNodes.length - 1];
+    // $FlowFixMe[incompatible-cast] it is a <div> since it's matched by nodeName
+    const isCode = isCodeElement((domNode: HTMLDivElement));
+
+    // Mainly for code copy/pasting, adding line break in the end of the div
+    // if it's last child is inline (text) node.
+    if (
+      !isCode &&
+      lastChild &&
+      isInlineNode(lastChild) &&
+      domNode.nextSibling !== null
+    ) {
+      domNode.appendChild(document.createElement('br'));
+    }
+
+    return {
+      node: isCode ? $createCodeNode() : null,
+    };
+  },
   a: (domNode: Node) => {
     let node;
     if (domNode instanceof HTMLAnchorElement) {
