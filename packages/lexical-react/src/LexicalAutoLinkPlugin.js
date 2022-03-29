@@ -75,64 +75,61 @@ function isNextNodeValid(node: LexicalNode): boolean {
   );
 }
 
+function isContentAroundIsValid(
+  matchStart: number,
+  matchEnd: number,
+  text: string,
+  node: TextNode,
+): boolean {
+  const contentBeforeIsValid =
+    matchStart > 0 ? text[matchStart - 1] === ' ' : isPreviousNodeValid(node);
+  if (!contentBeforeIsValid) {
+    return false;
+  }
+
+  const contentAfterIsValid =
+    matchEnd < text.length ? text[matchEnd] === ' ' : isNextNodeValid(node);
+  return contentAfterIsValid;
+}
+
 function handleLinkCreation(
   node: TextNode,
   matchers: Array<LinkMatcher>,
   onChange: ChangeHandler,
 ): void {
   const nodeText = node.getTextContent();
-  const nodeTextLength = nodeText.length;
   let text = nodeText;
-  let textOffset = 0;
-  let lastNode = node;
+  let invalidMatchEnd = 0;
+  let remainingTextNode = node;
   let match;
   while ((match = findFirstMatch(text, matchers)) && match !== null) {
-    const matchOffset = match.index;
-    const offset = textOffset + matchOffset;
+    const matchStart = match.index;
     const matchLength = match.length;
+    const matchEnd = matchStart + matchLength;
+    const isValid = isContentAroundIsValid(matchStart, matchEnd, text, node);
 
-    // Previous node is valid if any of:
-    // 1. Space before same node
-    // 2. Space in previous simple text node
-    // 3. Previous node is LineBreakNode
-    let contentBeforeMatchIsValid;
-    if (offset > 0) {
-      contentBeforeMatchIsValid = nodeText[offset - 1] === ' ';
-    } else {
-      contentBeforeMatchIsValid = isPreviousNodeValid(node);
-    }
-
-    // Next node is valid if any of:
-    // 1. Space after same node
-    // 2. Space in next simple text node
-    // 3. Next node is LineBreakNode
-    let contentAfterMatchIsValid;
-    if (offset + matchLength < nodeTextLength) {
-      contentAfterMatchIsValid = nodeText[offset + matchLength] === ' ';
-    } else {
-      contentAfterMatchIsValid = isNextNodeValid(node);
-    }
-
-    if (contentBeforeMatchIsValid && contentAfterMatchIsValid) {
-      let middleNode;
-
-      if (matchOffset === 0) {
-        [middleNode, lastNode] = lastNode.splitText(matchLength);
+    if (isValid) {
+      let linkTextNode;
+      if (invalidMatchEnd + matchStart === 0) {
+        [linkTextNode, remainingTextNode] = remainingTextNode.splitText(
+          invalidMatchEnd + matchLength,
+        );
       } else {
-        [, middleNode, lastNode] = lastNode.splitText(
-          matchOffset,
-          matchOffset + matchLength,
+        [, linkTextNode, remainingTextNode] = remainingTextNode.splitText(
+          invalidMatchEnd + matchStart,
+          invalidMatchEnd + matchStart + matchLength,
         );
       }
       const linkNode = $createAutoLinkNode(match.url);
       linkNode.append($createTextNode(match.text));
-      middleNode.replace(linkNode);
+      linkTextNode.replace(linkNode);
       onChange(match.url, null);
+      invalidMatchEnd = 0;
+    } else {
+      invalidMatchEnd += matchEnd;
     }
 
-    const iterationOffset = matchOffset + matchLength;
-    text = text.substring(iterationOffset);
-    textOffset += iterationOffset;
+    text = text.substring(matchEnd);
   }
 }
 

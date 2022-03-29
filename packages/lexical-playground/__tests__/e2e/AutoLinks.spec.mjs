@@ -188,16 +188,9 @@ test.describe('Auto Links', () => {
     );
   });
 
-  test('Handles multiple autolinks in a row', async ({page, isPlainText}) => {
-    test.skip(isPlainText);
-    await focusEditor(page);
-    await pasteFromClipboard(page, {
-      'text/plain':
-        'https://1.com/ https://2.com/ https://3.com/ https://4.com/',
-    });
-    await assertHTML(
-      page,
-      html`
+  [
+    {
+      html: html`
         <p>
           <a href="https://1.com/" dir="ltr">
             <span data-lexical-text="true">https://1.com/</span>
@@ -216,7 +209,48 @@ test.describe('Auto Links', () => {
           </a>
         </p>
       `,
-      {ignoreClasses: true},
-    );
+      name: 'Creates multiple auto links in a row',
+      text: 'https://1.com/ https://2.com/ https://3.com/ https://4.com/',
+    },
+    {
+      html: html`
+        <p dir="ltr">
+          <span data-lexical-text="true">invalidhttps://1.com/</span>
+          <a href="https://2.com/" dir="ltr">
+            <span data-lexical-text="true">https://2.com/</span>
+          </a>
+          <span data-lexical-text="true"></span>
+          <a href="https://3.com/" dir="ltr">
+            <span data-lexical-text="true">https://3.com/</span>
+          </a>
+          <span data-lexical-text="true">invalidhttps://4.com/</span>
+          <a href="https://5.com/" dir="ltr">
+            <span data-lexical-text="true">https://5.com/</span>
+          </a>
+        </p>
+      `,
+      name: 'Creates links ignoring invalid matches',
+      text: 'invalidhttps://1.com/ https://2.com/ https://3.com/ invalidhttps://4.com/ https://5.com/',
+    },
+    {
+      html: html`
+        <p dir="ltr">
+          <span data-lexical-text="true">
+            invalidhttps://1.com/ invalidhttps://4.com/
+          </span>
+        </p>
+      `,
+      name: 'Does not create any link if all are invalid',
+      text: 'invalidhttps://1.com/ invalidhttps://4.com/',
+    },
+  ].forEach((testCase) => {
+    test(testCase.name, async ({page, isPlainText}) => {
+      test.skip(isPlainText);
+      await focusEditor(page);
+      await pasteFromClipboard(page, {
+        'text/plain': testCase.text,
+      });
+      await assertHTML(page, testCase.html, {ignoreClasses: true});
+    });
   });
 });
